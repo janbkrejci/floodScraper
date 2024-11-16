@@ -43,6 +43,9 @@ function updateChart(chart, data) {
     chart.options.scales.y.min = minValue;
     chart.options.scales.y.max = maxValue;
     chart.update();
+
+    const newestRecord = data[0];
+    document.getElementById('lastRecord').innerText = `Hladina Výrovky v Plaňanech. Poslední záznam: ${newestRecord.datetime.toLocaleString('cs-CZ')}`;
 }
 
 async function main() {
