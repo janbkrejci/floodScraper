@@ -3,7 +3,7 @@ async function fetchData() {
     const proxyUrl = '';
     const targetUrl = 'https://hydro.chmi.cz/hppsoldv/hpps_prfdata.php?seq=307024';
     // const response = await fetch(proxyUrl + encodeURIComponent(targetUrl));
-    const response = await fetch(targetUrl);
+    const response = await fetch(targetUrl, {mode: "no-cors"});
     const text = await response.text();
     const parser = new DOMParser();
     const doc = parser.parseFromString(text, 'text/html');
