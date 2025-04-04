@@ -1,3 +1,4 @@
+// updated
 async function fetchData() {
     try {
         // Použijeme CORS proxy, protože ČHMÚ pravděpodobně nepovoluje cross-origin požadavky
@@ -21,15 +22,51 @@ async function fetchData() {
         const tables = Array.from(doc.querySelectorAll('table'));
         let dataTable = null;
         
-        // Hledáme tabulku s daty o vodním stavu
+        // Nejdříve zkusíme najít tabulku podle charakteristických hlaviček
+        const tables = Array.from(doc.querySelectorAll('table'));
         for (const table of tables) {
-            const headerText = table.textContent.toLowerCase();
-            if (headerText.includes('datum') && (headerText.includes('stav') || headerText.includes('průtok'))) {
+            const headers = table.querySelectorAll('th');
+            let hasDateColumn = false;
+            let hasWaterLevelColumn = false;
+            
+            for (const header of headers) {
+                const headerText = header.textContent.toLowerCase();
+                if (headerText.includes('datum') || headerText.includes('čas')) {
+                    hasDateColumn = true;
+                }
+                if (headerText.includes('stav')) {
+                    hasWaterLevelColumn = true;
+                }
+            }
+            
+            // Musí mít obě požadované sloupce a alespoň 5 řádků dat (aby se vyloučily malé tabulky)
+            if (hasDateColumn && hasWaterLevelColumn && table.querySelectorAll('tr').length > 5) {
                 dataTable = table;
                 break;
             }
         }
-        
+
+        // Alternativní způsob - hledáme tabulku se specifickým formátem dat
+        if (!dataTable) {
+            for (const table of tables) {
+                const rows = table.querySelectorAll('tr');
+                if (rows.length < 5) continue; // Přeskočit malé tabulky
+                
+                // Kontrola, zda první buňka druhého řádku obsahuje datum ve správném formátu
+                if (rows.length > 1) {
+                    const cells = rows[1].querySelectorAll('td');
+                    if (cells.length >= 2) {
+                        const dateText = cells[0].innerText.trim();
+                        // Kontrola formátu data (DD.MM.YYYY)
+                        if (/\d{2}\.\d{2}\.\d{4}/.test(dateText)) {
+                            dataTable = table;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         if (!dataTable) {
             console.error("Tabulka s daty nebyla nalezena");
             return [];
@@ -40,25 +77,46 @@ async function fetchData() {
         // Zpracování řádků tabulky
         const rows = dataTable.querySelectorAll('tr');
         const result = [];
-        
-        // Přeskočit první řádek, který je pravděpodobně záhlaví
-        for (let i = 1; i < rows.length; i++) {
+
+        // První řádek je pravděpodobně záhlaví, zkontrolujme to
+        let startIndex = 0;
+        const firstRowCells = rows[0].querySelectorAll('th');
+        if (firstRowCells.length > 0) {
+            // První řádek obsahuje záhlaví (th elementy), začneme od druhého řádku
+            startIndex = 1;
+        }
+
+        for (let i = startIndex; i < rows.length; i++) {
             const cells = rows[i].querySelectorAll('td');
-            if (cells.length >= 2) {
+            if (cells.length >= 3) { // Očekáváme minimálně datum, stav a průtok
                 const dateText = cells[0].innerText.trim();
-                const waterHeightText = cells[1].innerText.trim().replace(',', '.');
+                const waterHeightText = cells[1].innerText.trim();
+                
+                // Přeskočit řádky, které neobsahují validní datum (např. řádky s informacemi o stupních povodňové aktivity)
+                if (!dateText.match(/\d{2}\.\d{2}\.\d{4}/) && !dateText.match(/\d{1,2}\.\d{1,2}\.\d{4}/)) {
+                    continue;
+                }
                 
                 if (dateText && waterHeightText) {
-                    const datetime = parseDate(dateText);
-                    const waterHeight = parseFloat(waterHeightText);
-                    
-                    if (!isNaN(waterHeight) && datetime instanceof Date && !isNaN(datetime)) {
-                        result.push({ datetime, waterHeight });
+                    try {
+                        const datetime = parseDate(dateText);
+                        // Odstranit vše kromě čísel a desetinné čárky/tečky
+                        const cleanedHeightText = waterHeightText.replace(/[^\d.,]/g, '').replace(',', '.');
+                        console.log(`Původní: "${waterHeightText}", Vyčištěno: "${cleanedHeightText}"`);
+                        const waterHeight = parseFloat(cleanedHeightText);
+                        
+                        if (!isNaN(waterHeight) && datetime instanceof Date && !isNaN(datetime)) {
+                            result.push({ datetime, waterHeight });
+                        } else {
+                            console.log(`Přeskakuji neplatné hodnoty: Datum: ${dateText}, Výška: ${waterHeightText}`);
+                        }
+                    } catch (e) {
+                        console.error(`Chyba při zpracování řádku: ${dateText}`, e);
                     }
                 }
             }
         }
-        
+
         // Seřadit od nejnovějšího
         result.sort((a, b) => b.datetime - a.datetime);
         
