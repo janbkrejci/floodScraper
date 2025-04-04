@@ -1,11 +1,8 @@
 async function fetchData() {
     try {
-        // Použijeme CORS proxy, protože ČHMÚ pravděpodobně nepovoluje cross-origin požadavky
         const proxyUrl = 'https://corsproxy.io/?';
         const targetUrl = 'https://hydro.chmi.cz/hppsoldv/hpps_prfdata.php?seq=307024';
         
-        // Pro testovací účely můžeme použít lokální soubor místo CORS proxy
-        // const response = await fetch('downloaded.html');
         const response = await fetch(proxyUrl + encodeURIComponent(targetUrl));
         
         if (!response.ok) {
@@ -16,23 +13,16 @@ async function fetchData() {
         const parser = new DOMParser();
         const doc = parser.parseFromString(text, 'text/html');
         
-        // Loguji strukturu pro debugging
-        console.log("Dokument načten, hledám tabulku s daty...");
-        
         let dataTable = null;
         
-        // Hledáme tabulku která má class="center_text" nebo je potomkem div.tborder
-        // Toto je specifické pro ČHMÚ formát, jak vidíme v downloaded.html
         const tborderDivs = doc.querySelectorAll('div.tborder.center_text');
         if (tborderDivs.length > 0) {
             const tables = tborderDivs[0].querySelectorAll('table');
             if (tables.length > 0) {
                 dataTable = tables[0];
-                console.log("Nalezena tabulka podle div.tborder.center_text");
             }
         }
         
-        // Pokud nenajdeme tabulku výše, zkusíme najít tabulku s konkrétním záhlavím
         if (!dataTable) {
             const tables = Array.from(doc.querySelectorAll('table'));
             for (const table of tables) {
@@ -56,27 +46,23 @@ async function fetchData() {
                 
                 if (hasDateHeader && hasWaterLevelHeader && hasFlowHeader) {
                     dataTable = table;
-                    console.log("Nalezena tabulka podle záhlaví sloupců");
                     break;
                 }
             }
         }
         
-        // Ještě jeden způsob - hledáme tabulku, která obsahuje řádky s formátem data a číselnou hodnotu
         if (!dataTable) {
             const tables = Array.from(doc.querySelectorAll('table'));
             for (const table of tables) {
                 const rows = table.querySelectorAll('tr');
-                if (rows.length < 5) continue; // Příliš málo řádků
+                if (rows.length < 5) continue;
                 
                 let validRows = 0;
                 
-                // Zkontrolujeme, jestli tabulka obsahuje data ve formátu, který očekáváme
                 for (let i = 1; i < Math.min(rows.length, 5); i++) {
                     const cells = rows[i].querySelectorAll('td');
                     if (cells.length >= 3) {
                         const dateText = cells[0].textContent.trim();
-                        // Kontrola formátu data DD.MM.YYYY
                         if (/\d{2}\.\d{2}\.\d{4}/.test(dateText)) {
                             validRows++;
                         }
@@ -85,38 +71,30 @@ async function fetchData() {
                 
                 if (validRows >= 3) {
                     dataTable = table;
-                    console.log("Nalezena tabulka podle formátu dat");
                     break;
                 }
             }
         }
 
         if (!dataTable) {
-            console.error("Tabulka s daty nebyla nalezena");
             return [];
         }
         
-        console.log("Tabulka nalezena:", dataTable);
-        
-        // Zpracování řádků tabulky
         const rows = dataTable.querySelectorAll('tr');
         const result = [];
 
-        // První řádek je pravděpodobně záhlaví, zkontrolujme to
         let startIndex = 0;
         const firstRowCells = rows[0].querySelectorAll('th');
         if (firstRowCells.length > 0) {
-            // První řádek obsahuje záhlaví (th elementy), začneme od druhého řádku
             startIndex = 1;
         }
 
         for (let i = startIndex; i < rows.length; i++) {
             const cells = rows[i].querySelectorAll('td');
-            if (cells.length >= 3) { // Očekáváme minimálně datum, stav a průtok
+            if (cells.length >= 3) {
                 const dateText = cells[0].innerText.trim();
                 const waterHeightText = cells[1].innerText.trim();
                 
-                // Přeskočit řádky, které neobsahují validní datum (např. řádky s informacemi o stupních povodňové aktivity)
                 if (!dateText.match(/\d{2}\.\d{2}\.\d{4}/) && !dateText.match(/\d{1,2}\.\d{1,2}\.\d{4}/)) {
                     continue;
                 }
@@ -124,40 +102,30 @@ async function fetchData() {
                 if (dateText && waterHeightText) {
                     try {
                         const datetime = parseDate(dateText);
-                        // Odstranit vše kromě čísel a desetinné čárky/tečky
                         const cleanedHeightText = waterHeightText.replace(/[^\d.,]/g, '').replace(',', '.');
-                        console.log(`Původní: "${waterHeightText}", Vyčištěno: "${cleanedHeightText}"`);
                         const waterHeight = parseFloat(cleanedHeightText);
                         
                         if (!isNaN(waterHeight) && datetime instanceof Date && !isNaN(datetime)) {
                             result.push({ datetime, waterHeight });
-                        } else {
-                            console.log(`Přeskakuji neplatné hodnoty: Datum: ${dateText}, Výška: ${waterHeightText}`);
                         }
                     } catch (e) {
-                        console.error(`Chyba při zpracování řádku: ${dateText}`, e);
                     }
                 }
             }
         }
 
-        // Seřadit od nejnovějšího
         result.sort((a, b) => b.datetime - a.datetime);
         
-        console.log("Zpracováno záznamů:", result.length);
         return result;
     } catch (error) {
-        console.error("Chyba při načítání dat:", error);
         return [];
     }
 }
 
 function parseDate(dateString) {
     try {
-        // Upraveno pro různé formáty datumu
         dateString = dateString.trim();
         
-        // Kontrola formátu DD.MM.YYYY HH:MM
         const dateTimePattern = /(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{1,2})/;
         const match = dateString.match(dateTimePattern);
         
@@ -172,10 +140,8 @@ function parseDate(dateString) {
             );
         }
         
-        // Zkusit alternativní formáty, pokud by se změnily
         const dateParts = dateString.split(/[\s.:/]+/);
         if (dateParts.length >= 5) {
-            // Předpokládáme formát DD MM YYYY HH MM
             return new Date(
                 parseInt(dateParts[2]), 
                 parseInt(dateParts[1]) - 1, 
@@ -185,10 +151,8 @@ function parseDate(dateString) {
             );
         }
         
-        console.error("Nepodařilo se rozpoznat formát datumu:", dateString);
-        return new Date(0); // Fallback na epoch time, což by mělo být viditelně špatně
+        return new Date(0);
     } catch (e) {
-        console.error("Chyba při parsování datumu:", e);
         return new Date(0);
     }
 }
@@ -229,8 +193,8 @@ async function main() {
                 pointRadius: 1,
                 pointHoverRadius: 5,
                 fill: true,
-                backgroundColor: 'rgba(0, 0, 139, 0.5)', // Dark blue with 50% opacity
-                tension: 0.2 // lehké vyhlazení křivky
+                backgroundColor: 'rgba(0, 0, 139, 0.5)',
+                tension: 0.2
             }]  
         },
         options: {
@@ -281,7 +245,6 @@ async function main() {
         }
     });
 
-    // Informace o načítání
     document.getElementById('lastRecord').innerText = "Načítám data o hladině Výrovky...";
 
     async function fetchAndUpdate() {
@@ -289,13 +252,12 @@ async function main() {
             const data = await fetchData();
             updateChart(chart, data);
         } catch (error) {
-            console.error("Chyba při aktualizaci grafu:", error);
-            document.getElementById('lastRecord').innerText = "Chyba při načítání dat. Zkontrolujte konzoli.";
+            document.getElementById('lastRecord').innerText = "Chyba při načítání dat.";
         }
     }
 
     await fetchAndUpdate();
-    setInterval(fetchAndUpdate, 300000); // Aktualizace každých 5 minut
+    setInterval(fetchAndUpdate, 300000);
 }
 
 main();
