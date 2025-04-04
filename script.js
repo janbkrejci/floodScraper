@@ -17,9 +17,6 @@ async function fetchData() {
         // Loguji strukturu pro debugging
         console.log("Dokument načten, hledám tabulku s daty...");
         
-        // Modernější, flexibilnější způsob hledání tabulky s daty
-        // Hledáme tabulku, která obsahuje údaje o vodním stavu
-        const tables = Array.from(doc.querySelectorAll('table'));
         let dataTable = null;
         
         // Nejdříve zkusíme najít tabulku podle charakteristických hlaviček
