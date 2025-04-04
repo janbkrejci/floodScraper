@@ -1,9 +1,11 @@
-// updated
 async function fetchData() {
     try {
         // Použijeme CORS proxy, protože ČHMÚ pravděpodobně nepovoluje cross-origin požadavky
         const proxyUrl = 'https://corsproxy.io/?';
         const targetUrl = 'https://hydro.chmi.cz/hppsoldv/hpps_prfdata.php?seq=307024';
+        
+        // Pro testovací účely můžeme použít lokální soubor místo CORS proxy
+        // const response = await fetch('downloaded.html');
         const response = await fetch(proxyUrl + encodeURIComponent(targetUrl));
         
         if (!response.ok) {
@@ -19,47 +21,72 @@ async function fetchData() {
         
         let dataTable = null;
         
-        // Nejdříve zkusíme najít tabulku podle charakteristických hlaviček
-        const tables = Array.from(doc.querySelectorAll('table'));
-        for (const table of tables) {
-            const headers = table.querySelectorAll('th');
-            let hasDateColumn = false;
-            let hasWaterLevelColumn = false;
-            
-            for (const header of headers) {
-                const headerText = header.textContent.toLowerCase();
-                if (headerText.includes('datum') || headerText.includes('čas')) {
-                    hasDateColumn = true;
-                }
-                if (headerText.includes('stav')) {
-                    hasWaterLevelColumn = true;
-                }
-            }
-            
-            // Musí mít obě požadované sloupce a alespoň 5 řádků dat (aby se vyloučily malé tabulky)
-            if (hasDateColumn && hasWaterLevelColumn && table.querySelectorAll('tr').length > 5) {
-                dataTable = table;
-                break;
+        // Hledáme tabulku která má class="center_text" nebo je potomkem div.tborder
+        // Toto je specifické pro ČHMÚ formát, jak vidíme v downloaded.html
+        const tborderDivs = doc.querySelectorAll('div.tborder.center_text');
+        if (tborderDivs.length > 0) {
+            const tables = tborderDivs[0].querySelectorAll('table');
+            if (tables.length > 0) {
+                dataTable = tables[0];
+                console.log("Nalezena tabulka podle div.tborder.center_text");
             }
         }
-
-        // Alternativní způsob - hledáme tabulku se specifickým formátem dat
+        
+        // Pokud nenajdeme tabulku výše, zkusíme najít tabulku s konkrétním záhlavím
         if (!dataTable) {
+            const tables = Array.from(doc.querySelectorAll('table'));
+            for (const table of tables) {
+                const headers = table.querySelectorAll('th');
+                let hasDateHeader = false;
+                let hasWaterLevelHeader = false;
+                let hasFlowHeader = false;
+                
+                for (const header of headers) {
+                    const headerText = header.textContent.trim().toLowerCase();
+                    if (headerText.includes('datum a čas')) {
+                        hasDateHeader = true;
+                    }
+                    if (headerText.includes('stav [cm]')) {
+                        hasWaterLevelHeader = true;
+                    }
+                    if (headerText.includes('průtok')) {
+                        hasFlowHeader = true;
+                    }
+                }
+                
+                if (hasDateHeader && hasWaterLevelHeader && hasFlowHeader) {
+                    dataTable = table;
+                    console.log("Nalezena tabulka podle záhlaví sloupců");
+                    break;
+                }
+            }
+        }
+        
+        // Ještě jeden způsob - hledáme tabulku, která obsahuje řádky s formátem data a číselnou hodnotu
+        if (!dataTable) {
+            const tables = Array.from(doc.querySelectorAll('table'));
             for (const table of tables) {
                 const rows = table.querySelectorAll('tr');
-                if (rows.length < 5) continue; // Přeskočit malé tabulky
+                if (rows.length < 5) continue; // Příliš málo řádků
                 
-                // Kontrola, zda první buňka druhého řádku obsahuje datum ve správném formátu
-                if (rows.length > 1) {
-                    const cells = rows[1].querySelectorAll('td');
-                    if (cells.length >= 2) {
-                        const dateText = cells[0].innerText.trim();
-                        // Kontrola formátu data (DD.MM.YYYY)
+                let validRows = 0;
+                
+                // Zkontrolujeme, jestli tabulka obsahuje data ve formátu, který očekáváme
+                for (let i = 1; i < Math.min(rows.length, 5); i++) {
+                    const cells = rows[i].querySelectorAll('td');
+                    if (cells.length >= 3) {
+                        const dateText = cells[0].textContent.trim();
+                        // Kontrola formátu data DD.MM.YYYY
                         if (/\d{2}\.\d{2}\.\d{4}/.test(dateText)) {
-                            dataTable = table;
-                            break;
+                            validRows++;
                         }
                     }
+                }
+                
+                if (validRows >= 3) {
+                    dataTable = table;
+                    console.log("Nalezena tabulka podle formátu dat");
+                    break;
                 }
             }
         }
